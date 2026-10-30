@@ -366,7 +366,10 @@ video, and `--video-pruning-method` to choose the training-free algorithm:
 
 Pruning does not reduce the input processed by the vision encoder. The scheduler
 budgets encoder computation using the encoder output token count before pruning,
-while the encoder cache stores only the retained embeddings.
+while the encoder cache stores only the retained embeddings. An item whose
+unpruned cost exceeds the entire step budget is charged the full step budget,
+so it can run alone instead of stalling. Such an oversized encoder call may
+exceed the profiled compute budget.
 
 ```bash
 vllm serve Qwen/Qwen3-VL-8B-Instruct \

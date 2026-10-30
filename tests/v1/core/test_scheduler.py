@@ -107,7 +107,31 @@ def test_pruned_encoder_budget_with_duplicate_inputs():
     assert scheduler.encoder_cache_manager.num_free_slots == free_slots - 4
 
 
-def test_preemption_restores_unpruned_encoder_budget():
+def test_oversized_encoder_item_runs_alone():
+    """An item larger than the step budget must not wait forever."""
+    scheduler = create_scheduler(model="Qwen/Qwen3-VL-2B-Instruct")
+    budget = scheduler.max_num_encoder_input_tokens
+    requests = create_requests(
+        num_requests=2,
+        num_tokens=4,
+        mm_positions=[
+            [PlaceholderRange(offset=0, length=4, num_encoder_tokens=budget + 1)]
+            for _ in range(2)
+        ],
+        mm_hashes_list=[["oversized-a"], ["oversized-b"]],
+    )
+    for request in requests:
+        scheduler.add_request(request)
+
+    output = scheduler.schedule()
+    assert output.scheduled_encoder_inputs == {requests[0].request_id: [0]}
+    assert set(output.num_scheduled_tokens) == {requests[0].request_id}
+
+
+@pytest.mark.parametrize("encoder_compute_overage", [0, 7])
+def test_preemption_restores_unpruned_encoder_budget(
+    encoder_compute_overage: int,
+):
     scheduler = create_scheduler_with_priority(
         model="Qwen/Qwen3-VL-2B-Instruct",
         max_num_batched_tokens=200,
@@ -115,7 +139,7 @@ def test_preemption_restores_unpruned_encoder_budget():
         num_blocks=7,
         block_size=16,
     )
-    compute_tokens = scheduler.max_num_encoder_input_tokens
+    compute_tokens = scheduler.max_num_encoder_input_tokens + encoder_compute_overage
     low = create_requests_with_priority(
         1,
         priorities=[5],
